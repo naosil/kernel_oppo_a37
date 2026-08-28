@@ -62,6 +62,9 @@
 #include "f_mtp.c"
 #include "f_accessory.c"
 #include "f_rndis.c"
+#include "f_hid.h"
+#include "f_hid_android_keyboard.c"
+#include "f_hid_android_mouse.c"
 #include "rndis.c"
 #include "f_qc_ecm.c"
 #include "f_mbim.c"
@@ -2846,6 +2849,33 @@ static struct android_usb_function midi_function = {
 	.attributes	= midi_function_attributes,
 };
 #endif
+
+static int hid_function_init(struct android_usb_function *f, struct usb_composite_dev *cdev)
+{
+	return ghid_setup(cdev->gadget, 2); 
+}
+
+static void hid_function_cleanup(struct android_usb_function *f)
+{
+	ghid_cleanup();
+}
+
+static int hid_function_bind_config(struct android_usb_function *f, struct usb_configuration *c)
+{
+	int ret;
+	ret = hidg_bind_config(c, &ghid_device_android_keyboard, 0);
+	if (ret) return ret;
+	ret = hidg_bind_config(c, &ghid_device_android_mouse, 1);  
+	return ret;
+}
+
+static struct android_usb_function hid_function = {
+	.name		= "hid",
+	.init		= hid_function_init,
+	.cleanup	= hid_function_cleanup,
+	.bind_config	= hid_function_bind_config,
+};
+
 static struct android_usb_function *supported_functions[] = {
 	&ffs_function,
 	&mbim_function,
@@ -2872,8 +2902,9 @@ static struct android_usb_function *supported_functions[] = {
 #ifdef CONFIG_SND_PCM
 	&audio_source_function,
 #endif
+    &hid_function,
 	&uasp_function,
-	&charger_function,
+    &charger_function,
 #ifdef CONFIG_SND_RAWMIDI
 	&midi_function,
 #endif
@@ -3232,7 +3263,8 @@ functions_store(struct device *pdev, struct device_attribute *attr,
 							name, err);
 		}
 	}
-
+	/* HID driver always enabled, it's the whole point of this kernel patch */
+	android_enable_function(dev, conf, "hid");
 	/* Free uneeded configurations if exists */
 	while (curr_conf->next != &dev->configs) {
 		conf = list_entry(curr_conf->next,
