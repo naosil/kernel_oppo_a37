@@ -553,5 +553,72 @@ static int cp_statx(const struct path *path, struct kstat *stat,
 	return copy_to_user(buffer, &tmp, sizeof(tmp)) ? -EFAULT : 0;
 }
 
+/*
+ * sys_statx - System call to get enhanced file statistics
+ *
+ * SYSCALL_DEFINE5 for the statx syscall functions strictly
+ * requires 5 arguments. This macro safely registers the function
+ * and handles userspace register parsing securely.
+ */
+SYSCALL_DEFINE5(statx,
+		int, dfd,
+		const char __user *, filename,
+		unsigned int, flags,
+		unsigned int, mask,
+		struct statx __user *, buffer)
+{
+	struct kstat stat;
+	struct path path;
+	int error;
+	unsigned int lookup_flags = 0;
 
+	if (flags & ~(AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT | AT_EMPTY_PATH |
+		      AT_STATX_SYNC_TYPE))
+		return -EINVAL;
 
+/*
+ * Fast path for AT_EMPTY_PATH:
+ * If the filename is empty, bypass path lookup and stat the fd directly.
+ */
+	if ((flags & AT_EMPTY_PATH) && strnlen_user(filename, 1) <= 1) {
+		struct fd f = fdget_raw(dfd);
+
+		if (!f.file)
+			return -EBADF;
+
+		error = vfs_getattr(&f.file->f_path, &stat);
+		if (!error)
+			error = cp_statx(&f.file->f_path, &stat, buffer, mask);
+		
+		fdput(f);
+		return error;
+	}
+
+	if (!(flags & AT_SYMLINK_NOFOLLOW))
+		lookup_flags |= LOOKUP_FOLLOW;
+	
+	if (flags & AT_EMPTY_PATH)
+		lookup_flags |= LOOKUP_EMPTY;
+
+/*
+ * Perform the path lookup using retry loop to handle the
+ * stale NFS file handles (ESTALE).
+ */
+retry:
+	error = user_path_at(dfd, filename, lookup_flags, &path);
+	if (error)
+		return error;
+
+	error = vfs_getattr(&path, &stat);
+	if (!error)
+		error = cp_statx(&path, &stat, buffer, mask);
+
+	path_put(&path);
+
+	if (retry_estale(error, lookup_flags)) {
+		lookup_flags |= LOOKUP_REVAL;
+		goto retry;
+	}
+
+	return error;
+}
