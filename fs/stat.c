@@ -18,6 +18,8 @@
 #include <asm/uaccess.h>
 #include <asm/unistd.h>
 
+#include "mount.h"
+
 void generic_fillattr(struct inode *inode, struct kstat *stat)
 {
 	stat->dev = inode->i_sb->s_dev;
@@ -490,3 +492,66 @@ void inode_set_bytes(struct inode *inode, loff_t bytes)
 }
 
 EXPORT_SYMBOL(inode_set_bytes);
+
+/*                                                                                                               
+ * statx(2) implementation for legacy stat function                                                                        
+ */
+             
+static int cp_statx(const struct path *path, struct kstat *stat,
+		    struct statx __user *buffer, u32 request_mask)
+{
+	struct statx tmp;
+	struct mount *m;
+
+	memset(&tmp, 0, sizeof(tmp));
+
+	tmp.stx_mask = STATX_BASIC_STATS;
+
+	tmp.stx_blksize = stat->blksize;
+	tmp.stx_nlink = stat->nlink;
+	tmp.stx_uid = from_kuid_munged(current_user_ns(), stat->uid);
+	tmp.stx_gid = from_kgid_munged(current_user_ns(), stat->gid);
+	tmp.stx_mode = stat->mode;
+	tmp.stx_ino = stat->ino;
+	tmp.stx_size = stat->size;
+	tmp.stx_blocks = stat->blocks;
+
+	tmp.stx_dev_major = MAJOR(stat->dev);
+	tmp.stx_dev_minor = MINOR(stat->dev);
+	tmp.stx_rdev_major = MAJOR(stat->rdev);
+	tmp.stx_rdev_minor = MINOR(stat->rdev);
+
+	tmp.stx_atime.tv_sec = stat->atime.tv_sec;
+	tmp.stx_atime.tv_nsec = stat->atime.tv_nsec;
+	tmp.stx_mtime.tv_sec = stat->mtime.tv_sec;
+	tmp.stx_mtime.tv_nsec = stat->mtime.tv_nsec;
+	tmp.stx_ctime.tv_sec = stat->ctime.tv_sec;
+	tmp.stx_ctime.tv_nsec = stat->ctime.tv_nsec;
+	tmp.stx_btime.tv_sec = 0;
+	tmp.stx_btime.tv_nsec = 0;
+
+/*                                                                                                             
+ * HACK: Retrieve the mount ID directly from the mount structure.                                                    
+ * Legacy kstat does not carry mnt_id, to fix simply map in here                                                      
+ * to satisfy the STATX_MNT_ID requirement.                                                                    
+ */   	
+      if (path && path->mnt) {
+		m = real_mount(path->mnt);
+		tmp.stx_mnt_id = (u64)m->mnt_id;
+		tmp.stx_mask |= STATX_MNT_ID;
+
+ /* Determine if this dentry is the root of the mount */   
+		if (path->dentry == path->mnt->mnt_root)
+			tmp.stx_attributes |= STATX_ATTR_MOUNT_ROOT;
+	}
+    
+	tmp.stx_attributes_mask = STATX_ATTR_MOUNT_ROOT | STATX_ATTR_AUTOMOUNT;
+
+	if (path && path->dentry && path->dentry->d_flags & DCACHE_NEED_AUTOMOUNT)
+		tmp.stx_attributes |= STATX_ATTR_AUTOMOUNT;
+
+	return copy_to_user(buffer, &tmp, sizeof(tmp)) ? -EFAULT : 0;
+}
+
+
+
