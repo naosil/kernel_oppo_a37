@@ -500,7 +500,6 @@ cp_statx(const struct kstat *stat, struct statx __user *buffer)
 
 	tmp.stx_mask = stat->result_mask;
 	tmp.stx_blksize = stat->blksize;
-	tmp.stx_attributes = stat->attributes;
 	tmp.stx_nlink = stat->nlink;
 	tmp.stx_uid = from_kuid_munged(current_user_ns(), stat->uid);
 	tmp.stx_gid = from_kgid_munged(current_user_ns(), stat->gid);
@@ -521,7 +520,6 @@ cp_statx(const struct kstat *stat, struct statx __user *buffer)
 	tmp.stx_rdev_minor = MINOR(stat->rdev);
 	tmp.stx_dev_major = MAJOR(stat->dev);
 	tmp.stx_dev_minor = MINOR(stat->dev);
-	tmp.stx_mnt_id = stat->mnt_id;
 
 	return copy_to_user(buffer, &tmp, sizeof(tmp)) ? -EFAULT : 0;
 }
