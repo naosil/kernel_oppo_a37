@@ -512,8 +512,10 @@ cp_statx(const struct path *path, struct kstat *stat,
 	tmp.stx_attributes_mask = stat->attributes_mask;
 	tmp.stx_atime.tv_sec = stat->atime.tv_sec;
 	tmp.stx_atime.tv_nsec = stat->atime.tv_nsec;
-	tmp.stx_btime.tv_sec = stat->btime.tv_sec;
-	tmp.stx_btime.tv_nsec = stat->btime.tv_nsec;
+
+	tmp.stx_btime.tv_sec = 0;
+	tmp.stx_btime.tv_nsec = 0;
+
 	tmp.stx_ctime.tv_sec = stat->ctime.tv_sec;
 	tmp.stx_ctime.tv_nsec = stat->ctime.tv_nsec;
 	tmp.stx_mtime.tv_sec = stat->mtime.tv_sec;
